@@ -3,6 +3,7 @@
 class SudokuBoard {
 public:
     SudokuBoard() : board(9) {
+        fill(0);
     }
 
     const array<int8_t, 9>& operator[](int row) const {
@@ -11,6 +12,11 @@ public:
 
     array<int8_t, 9>& operator[](int row) {
         return board[row];
+    }
+
+    void fill(int x) {
+        for (int i = 0; i < 9; i++)
+            board[i].fill(static_cast<int8_t>(x));
     }
 
     bool isSolved() const {
@@ -46,6 +52,7 @@ private:
 class SudokuDigitCounter {
 public:
     SudokuDigitCounter() : cnt(9) {
+        fill(0);
     }
 
     const array<int8_t, 9>& operator[](int index) const {
@@ -61,10 +68,6 @@ public:
             cnt[i].fill(static_cast<int8_t>(x));
     }
 
-    bool add(int index, int digit) {
-        return ++cnt[index][digit - 1] <= 1;
-    }
-
 private:
     vector<array<int8_t, 9>> cnt;   // [index][digit - 1] = the number of a digit
 };
@@ -72,10 +75,7 @@ private:
 class SudokuDigitFlag {
 public:
     SudokuDigitFlag() : flag(9) {
-        for (int i = 0; i < 9; i++) {
-            for (int j = 0; j < 9; j++)
-                flag[i][j] = BIT_FLAG_ALL;
-        }
+        init();
     }
 
     const array<int16_t, 9>& operator[](int index) const {
@@ -84,6 +84,13 @@ public:
 
     array<int16_t, 9>& operator[](int index) {
         return flag[index];
+    }
+
+    void init() {
+        for (int i = 0; i < 9; i++) {
+            for (int j = 0; j < 9; j++)
+                flag[i][j] = BIT_FLAG_ALL;
+        }
     }
 
 private:
@@ -95,10 +102,16 @@ private:
 
 class SudokuState {
 public:
-    bool set(const vector<string>& in) {
+    void init() {
+        board.fill(0);
+        candidateFlag.init();
         candidateRows.fill(9);
         candidateCols.fill(9);
         candidateSquares.fill(9);
+    }
+
+    bool set(const vector<string>& in) {
+        init();
 
         bool res = true;
         for (int i = 0; i < 9; i++) {
@@ -114,17 +127,15 @@ public:
         return res;
     }
 
-    template <typename T>
-    bool set(const vector<vector<T>>& in) {
-        candidateRows.fill(9);
-        candidateCols.fill(9);
-        candidateSquares.fill(9);
+    template <typename VV>
+    bool set(const VV& in) {
+        init();
 
         bool res = true;
         for (int i = 0; i < 9; i++) {
             for (int j = 0; j < 9; j++) {
                 if (1 <= in[i][j] && in[i][j] <= 9) {
-                    if (!update(i, j, static_cast<int8_t>(in[i][j])))
+                    if (!update(i, j, static_cast<int>(in[i][j])))
                         res = false;
                 } else {
                     board[i][j] = 0;
@@ -135,6 +146,10 @@ public:
     }
 
 
+    const SudokuBoard& getBoard() const {
+        return board;
+    }
+
     bool isSolved() const {
         return board.isSolved();
     }
@@ -144,10 +159,11 @@ public:
         if (board[row][col] == x)
             return true;
 
-        if (board[row][col] > 0 || (candidateFlag[row][col] & (1 << (x - 1))) == 0)
+        int flag = getCandidateFlag(row, col);
+        if (board[row][col] > 0 || (flag & (1 << (x - 1))) == 0)
             return false;
 
-        clearCandidateFlagWithMask(row, col, candidateFlag[row][col]);
+        clearCandidateFlagWithMask(row, col, flag); // clear all flags of cell(row, col)
         board[row][col] = x;            // must set board[row][col] before calling updateRow(), updateCol() and updateSquare()
         return updateRow(row, x)
             && updateCol(col, x)
@@ -162,7 +178,7 @@ public:
                 if (board[i][j] > 0)
                     continue;
 
-                int flag = candidateFlag[i][j];
+                int flag = getCandidateFlag(i, j);
                 if (flag == 0)
                     return -1;
 
@@ -203,10 +219,10 @@ public:
             }
         }
         sort(res.begin(), res.end(), [this](const pair<int, int>& a, const pair<int, int>& b) {
-            int bitA = SudokuState::bitCount(candidateFlag[a.first][a.second]);
-            int bitB = SudokuState::bitCount(candidateFlag[b.first][b.second]);
-            if (bitA != bitB)
-                return bitA < bitB;
+            int bitCntA = SudokuState::bitCount(candidateFlag[a.first][a.second]);
+            int bitCntB = SudokuState::bitCount(candidateFlag[b.first][b.second]);
+            if (bitCntA != bitCntB)
+                return bitCntA < bitCntB;
             if (a.first != b.first)
                 return a.first < b.first;
             return a.second < b.second;
@@ -227,7 +243,7 @@ private:
             candidateCols[col][x]--;
             candidateSquares[(row / 3) * 3 + (col / 3)][x]--;
         }
-        return candidateFlag[row][col] != 0 || board[row][col] > 0; // return is_valid_cell?
+        return candidateFlag[row][col] != 0 || board[row][col] > 0; // return if the cell is valid
     }
 
     void clearCandidateFlagWithMask(int row, int col, int mask) {
@@ -301,8 +317,8 @@ public:
         set(in);
     }
 
-    template <typename T>
-    SudokuSolver(const vector<vector<T>>& in) {
+    template <typename VV>
+    SudokuSolver(const VV& in) {
         set(in);
     }
 
@@ -310,18 +326,18 @@ public:
         return inputValid = input.set(in);
     }
 
-    template <typename T>
-    bool set(const vector<vector<T>>& in) {
+    template <typename VV>
+    bool set(const VV& in) {
         return inputValid = input.set(in);
     }
 
     //---
 
-    // return (a_solution, solution_count)
+    // return (a_solution, solution_count, backtracking_depth)
     //   solotion_count: 0 - no solution, 1 - unique solution, 2 - two or more solutions
-    pair<SudokuBoard, int> solve() const {
+    tuple<SudokuBoard,int,int> solve() const {
         auto state = input;
-        pair<SudokuBoard, int> result(state.board, 0);
+        tuple<SudokuBoard, int, int> result(state.board, 0, 0);
 
         if (!inputValid)
             return result;
@@ -343,8 +359,8 @@ public:
             }
 
             if (solved) {
-                if (++result.second == 1)
-                    result.first = state.board;
+                if (++get<1>(result) == 1)
+                    get<0>(result) = state.board;
                 return ssrSolved;
             }
 
@@ -358,11 +374,12 @@ public:
 
         // step #2 : find solution(s) with backtracking
         vector<pair<int, int>> order = state.getTrialOrder();
+        get<2>(result) = static_cast<int>(order.size());
+
         function<bool(SudokuState&, int)> dfs;
-        dfs = [&dfs, &order, &result, &simpleSolver](SudokuState& prevState, int depth) -> bool {
-            int row, col;
-            row = order[depth].first;
-            col = order[depth].second;
+        dfs = [&dfs, &order, &simpleSolver, &result](SudokuState& prevState, int depth) -> bool {
+            int row = order[depth].first;
+            int col = order[depth].second;
             while (prevState.board[row][col] > 0) {
                 if (++depth >= static_cast<int>(order.size()))
                     return false;
@@ -370,7 +387,7 @@ public:
                 col = order[depth].second;
             }
 
-            for (int x = 1, flag = static_cast<int>(prevState.getCandidateFlag(row, col)); flag; x++, flag >>= 1) {
+            for (int x = 1, flag = prevState.getCandidateFlag(row, col); flag; x++, flag >>= 1) {
                 if ((flag & 1) == 0)
                     continue;
 
@@ -382,7 +399,7 @@ public:
                 switch (simpleSolver(newState)) {
                 case ssrSolved:
                     // backtracking stops if thre are two or more solutions
-                    if (result.second >= 2)
+                    if (get<1>(result) >= 2)
                         return true;
                     break;
                 case ssrNotSolved:
@@ -400,13 +417,17 @@ public:
 
     //---
 
-    static pair<SudokuBoard, int> solve(const vector<string>& in) {
+    // return (a_solution, solution_count, backtracking_depth)
+    //   solotion_count: 0 - no solution, 1 - unique solution, 2 - two or more solutions
+    static tuple<SudokuBoard,int,int> solve(const vector<string>& in) {
         SudokuSolver solver(in);
         return solver.solve();
     }
 
-    template <typename T>
-    static pair<SudokuBoard, int> solve(const vector<vector<T>>& in) {
+    // return (a_solution, solution_count, backtracking_depth)
+    //   solotion_count: 0 - no solution, 1 - unique solution, 2 - two or more solutions
+    template <typename VV>
+    static tuple<SudokuBoard,int,int> solve(const VV& in) {
         SudokuSolver solver(in);
         return solver.solve();
     }
